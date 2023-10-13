@@ -1,0 +1,12 @@
+bin/*
+dist/*
+vendor/
+tags
+.DS_Store
+*.orig
+__debug_bin
+
+# Editor
+*.swp
+.idea/
+.vscode

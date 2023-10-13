@@ -1,0 +1,7 @@
+apiVersion: configuration.aku.vn/v1alpha1
+kind: Aku
+metadata:
+  name: aku
+spec:
+  deploymentName: aku
+  replicas: 1

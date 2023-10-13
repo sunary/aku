@@ -1,0 +1,145 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.9.2
+    kubectl.kubernetes.io/last-applied-configuration:
+  creationTimestamp: "2022-12-24T08:21:07Z"
+  generation: 1
+  name: akuingresses.configuration.aku.vn
+  resourceVersion: "4389"
+  uid: 7e5d816b-3b6c-489f-a747-98ab9fda986e
+spec:
+  conversion:
+    strategy: None
+  group: configuration.aku.vn
+  names:
+    categories:
+    - aku-ingress-controller
+    kind: AkuIngress
+    listKind: AkuIngressList
+    plural: akuingresses
+    shortNames:
+    - ki
+    singular: akuingress
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: AkuIngress is the Schema for the akuingresses API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          route:
+            description: Route define rules to match client requests. Each Route is
+              associated with a Service, and a Service may have multiple Routes associated
+              to it.
+            properties:
+              headers:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                description: Headers contains one or more lists of values indexed
+                  by header name that will cause this Route to match if present in
+                  the request. The Host header cannot be used with this attribute.
+                type: object
+              https_redirect_status_code:
+                description: HTTPSRedirectStatusCode is the status code Aku responds
+                  with when all properties of a Route match except the protocol.
+                type: integer
+              methods:
+                description: Methods is a list of HTTP methods that match this Route.
+                items:
+                  type: string
+                type: array
+              path_handling:
+                description: PathHandling controls how the Service path, Route path
+                  and requested path are combined when sending a request to the upstream.
+                enum:
+                - v0
+                - v1
+                type: string
+              preserve_host:
+                description: PreserveHost sets When matching a Route via one of the
+                  hosts domain names, use the request Host header in the upstream
+                  request headers. If set to false, the upstream Host header will
+                  be that of the Service’s host.
+                type: boolean
+              protocols:
+                description: Protocols is an array of the protocols this Route should
+                  allow.
+                items:
+                  enum:
+                  - http
+                  - https
+                  - grpc
+                  - grpcs
+                  - tcp
+                  - tls
+                  - udp
+                  type: string
+                type: array
+              regex_priority:
+                description: RegexPriority is a number used to choose which route
+                  resolves a given request when several routes match it using regexes
+                  simultaneously.
+                type: integer
+              request_buffering:
+                description: RequestBuffering sets whether to enable request body
+                  buffering or not.
+                type: boolean
+              response_buffering:
+                description: ResponseBuffering sets whether to enable response body
+                  buffering or not.
+                type: boolean
+              snis:
+                description: SNIs is a list of SNIs that match this Route when using
+                  stream routing.
+                items:
+                  type: string
+                type: array
+              strip_path:
+                description: StripPath sets When matching a Route via one of the paths
+                  strip the matching prefix from the upstream request URL.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    categories:
+    - aku-ingress-controller
+    kind: AkuIngress
+    listKind: AkuIngressList
+    plural: akuingresses
+    shortNames:
+    - ki
+    singular: akuingress
+  conditions:
+  - lastTransitionTime: "2022-12-24T08:21:07Z"
+    message: no conflicts found
+    reason: NoConflicts
+    status: "True"
+    type: NamesAccepted
+  - lastTransitionTime: "2022-12-24T08:21:07Z"
+    message: the initial names have been accepted
+    reason: InitialNamesAccepted
+    status: "True"
+    type: Established
+  storedVersions:
+  - v1
