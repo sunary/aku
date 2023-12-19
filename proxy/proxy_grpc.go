@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -34,7 +33,7 @@ func (g GrpcProxy) AllowMethod(method string) bool {
 	return g.allow.Has(method) || !(g.disallow.Empty() || g.disallow.Has(method))
 }
 
-func (p *Proxy) handleHttp2(req *http.Request, initial io.Reader, conn *net.TCPConn) error {
+func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) error {
 	path := "" // /pb.ProtoService/Method
 	defer func() {
 		ll.Info("close grpc conn", zap.String("path", path))
@@ -85,8 +84,7 @@ func (p *Proxy) handleHttp2(req *http.Request, initial io.Reader, conn *net.TCPC
 		return errNotFound
 	}
 
-	ip := getIP(req, p.ipForwardedHeader)
-	if !gProxy.AllowIp(ip) {
+	if !gProxy.AllowIp(reqIp) {
 		return errNotAllow
 	}
 

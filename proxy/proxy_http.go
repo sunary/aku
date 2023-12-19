@@ -2,11 +2,14 @@ package proxy
 
 import (
 	"bytes"
-	"io/ioutil"
+	"errors"
+	"io"
 	"net"
 	"net/http"
-	"net/url"
+	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sunary/aku/config"
 	"go.uber.org/zap"
@@ -29,10 +32,14 @@ func (h HttpProxy) AllowIp(ip string) bool {
 	return h.ipRestriction.Allow(ip)
 }
 
-func (p *Proxy) handleHttpReq(req *http.Request, conn *net.TCPConn, fw fwHttp) error {
+func (p *Proxy) handleHttp(conn *net.TCPConn, initial io.Reader, reqPath, reqIp string) error {
+	defer func() {
+		_ = conn.Close()
+	}()
+
 	overridePath := ""
 	for i := range p.sortedHttpPrefix {
-		if strings.HasPrefix(req.URL.Path, p.sortedHttpPrefix[i]) {
+		if strings.HasPrefix(reqPath, p.sortedHttpPrefix[i]) {
 			overridePath = p.sortedHttpPrefix[i]
 			break
 		}
@@ -45,40 +52,55 @@ func (p *Proxy) handleHttpReq(req *http.Request, conn *net.TCPConn, fw fwHttp) e
 	hProxy := p.httpProxy[overridePath]
 	ll.Info("handle http req", zap.String("overridePath", overridePath))
 
-	ip := getIP(req, p.ipForwardedHeader)
-	if !hProxy.AllowIp(ip) {
+	if !hProxy.AllowIp(reqIp) {
 		return errNotAllow
 	}
 
-	req.URL = &url.URL{
-		Scheme: "http",
-		Host:   hProxy.host,
-		Path:   strings.Replace(req.URL.Path, overridePath, hProxy.upstreamPath, 1),
+	buf := make([]byte, 4*1024)
+	nr, _ := initial.Read(buf)
+
+	indexStartPath, indexEndPath := 0, 0
+	for i := 0; i < nr; i++ {
+		if buf[i] == '/' && indexStartPath == 0 {
+			indexStartPath = i
+		}
+		if buf[i] == ' ' && indexStartPath > 0 {
+			indexEndPath = i
+			break
+		}
 	}
 
-	return fw(req, conn)
-}
+	newPath := strings.Replace(reqPath, overridePath, hProxy.upstreamPath, 1)
+	newBuf := bytes.Buffer{}
+	newBuf.Write(buf[:indexStartPath])
+	newBuf.WriteString(newPath)
+	newBuf.Write(buf[indexEndPath:nr])
 
-// TODO improve using pipe
-func (p *Proxy) forwardHttp(req *http.Request, conn *net.TCPConn) error {
-	body, err := ioutil.ReadAll(req.Body)
+	remoteConn, err := net.Dial("tcp", hProxy.host)
 	if err != nil {
 		return err
 	}
 
-	req.Body = ioutil.NopCloser(bytes.NewReader(body))
-	proxyReq, err := http.NewRequest(req.Method, req.URL.String(), bytes.NewReader(body))
-	proxyReq.Header = make(http.Header)
-	for h, val := range req.Header {
-		proxyReq.Header[h] = val
+	remoteConn.SetReadDeadline(time.Now().Add(time.Duration(p.grpcTimeout) * time.Second))
+	defer remoteConn.Close()
+
+	wg := sync.WaitGroup{}
+	dataSent := int64(0)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// Copy any data we receive from the host into the original connection
+		dataSent, _ = io.Copy(conn, remoteConn)
+		conn.CloseWrite()
+	}()
+
+	_, err = io.Copy(remoteConn, io.MultiReader(&newBuf, conn))
+	wg.Wait()
+
+	if errors.Is(err, os.ErrDeadlineExceeded) && dataSent > 0 {
+		return nil
 	}
 
-	httpClient := http.Client{
-		Timeout: p.httpTimeout,
-	}
-	resp, err := httpClient.Do(proxyReq)
-	if err != nil {
-		return err
-	}
-	return resp.Write(conn)
+	return err
 }

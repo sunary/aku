@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"net"
@@ -100,47 +99,51 @@ func NewProxy(cfg *config.Config) *Proxy {
 }
 
 func (p *Proxy) HandleTcpConn(conn *net.TCPConn) {
-	defer func() {
-		_ = conn.Close()
-	}()
+	defer conn.Close()
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, 4*1024)
 	n, err := conn.Read(buf)
 	if err != nil {
 		return
 	}
 
-	payload := buf[:n]
-	req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(payload)))
-	if err != nil {
-		return
+	reqIp := "0.0.0.0"
+	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+		reqIp = addr.IP.String()
 	}
 
-	if req.ProtoMajor >= 2 {
-		err = p.handleHttp2(req, bytes.NewBuffer(payload), conn)
+	firstLineIndex := 0
+	for i := 0; i < n; i++ {
+		if buf[i] == '\n' {
+			firstLineIndex = i
+			break
+		}
+	}
+
+	header := bytes.Split(buf[:firstLineIndex], []byte(" "))
+	reqPath := string(header[1])
+	reqVersion := string(header[2][:6])
+
+	switch reqVersion {
+	case "HTTP/1":
+		err = p.handleHttp(conn, bytes.NewBuffer(buf[:n]), reqPath, reqIp)
+		if err != nil {
+			ll.Error("handle http req", zap.String("path", string(header[1])), loging.Err(err))
+
+			resp := httpResp
+			resp.StatusCode = http.StatusInternalServerError
+			resp.Write(conn)
+			conn.Close()
+		}
+
+	case "HTTP/2":
+		err = p.handleGrpc(conn, bytes.NewBuffer(buf[:n]), reqIp)
 		if err != nil {
 			ll.Error("handle grpc req", loging.Err(err))
 		}
-	} else {
-		resp := httpResp
 
-		switch req.URL.Path {
-		case p.healthcheckPath:
-			resp.StatusCode = http.StatusOK
-			resp.Write(conn)
-			return
-
-		case p.wsPath:
-			err = p.handleHttpReq(req, conn, p.forwardWs)
-
-		default:
-			err = p.handleHttpReq(req, conn, p.forwardHttp)
-		}
-
-		if err != nil {
-			ll.Error("handle http req", zap.String("path", req.URL.Path), loging.Err(err))
-			resp.StatusCode = http.StatusInternalServerError
-			resp.Write(conn)
-		}
+	default:
+		ll.Error("HandleTcpConn unknow http version", zap.String(string(header[0]), reqVersion))
 	}
+
 }
