@@ -24,11 +24,10 @@ type Config struct {
 }
 
 type HttpConfig struct {
-	Port        int         `json:"port" mapstructure:"port" yaml:"port"`
-	Healthcheck string      `json:"healthcheck" mapstructure:"healthcheck" yaml:"healthcheck"`
-	Ws          string      `json:"ws" mapstructure:"ws" yaml:"ws"`
-	Timeout     int64       `json:"timeout" mapstructure:"timeout" yaml:"timeout"`
-	RouteMaps   []HttpRoute `json:"route_maps" mapstructure:"route_maps" yaml:"route_maps"`
+	Port      int         `json:"port" mapstructure:"port" yaml:"port"`
+	Timeout   int64       `json:"timeout" mapstructure:"timeout" yaml:"timeout"`
+	HealthURI string      `json:"health_uri" mapstructure:"health_uri" yaml:"health_uri"`
+	RouteMaps []HttpRoute `json:"route_maps" mapstructure:"route_maps" yaml:"route_maps"`
 }
 
 type HttpRoute struct {

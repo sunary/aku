@@ -2,13 +2,9 @@ package proxy
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"net"
-	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/sunary/aku/helper"
 	"go.uber.org/zap"
@@ -34,9 +30,7 @@ func (g GrpcProxy) AllowMethod(method string) bool {
 }
 
 func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) error {
-	path := "" // /pb.ProtoService/Method
 	defer func() {
-		ll.Info("close grpc conn", zap.String("path", path))
 		_ = conn.Close()
 	}()
 
@@ -51,6 +45,7 @@ func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) e
 	f = http2.NewFramer(io.Discard, reader)
 	decoder := hpack.NewDecoder(1024, nil)
 
+	var path string // "/pb.ProtoService/Method"
 	for path == "" {
 		frame, err := f.ReadFrame()
 		if err != nil {
@@ -73,7 +68,6 @@ func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) e
 		}
 	}
 
-	ll.Info("proxy grpc conn", zap.String("path", path))
 	pathFactor := strings.Split(path, "/")
 	if len(pathFactor) != 3 {
 		return errNotFound
@@ -84,6 +78,8 @@ func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) e
 		return errNotFound
 	}
 
+	ll.Info("handleGrpc conn", zap.String(gProxy.host, path))
+
 	if !gProxy.AllowIp(reqIp) {
 		return errNotAllow
 	}
@@ -92,31 +88,5 @@ func (p *Proxy) handleGrpc(conn *net.TCPConn, initial io.Reader, reqIp string) e
 		return errNotAllow
 	}
 
-	remoteConn, err := net.Dial("tcp", gProxy.host)
-	if err != nil {
-		return err
-	}
-
-	remoteConn.SetReadDeadline(time.Now().Add(time.Duration(p.grpcTimeout) * time.Second))
-	defer remoteConn.Close()
-
-	wg := sync.WaitGroup{}
-	dataSent := int64(0)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		// Copy any data we receive from the host into the original connection
-		dataSent, _ = io.Copy(conn, remoteConn)
-		conn.CloseWrite()
-	}()
-
-	_, err = io.Copy(remoteConn, io.MultiReader(initial, dataBuffer, conn))
-	wg.Wait()
-
-	if errors.Is(err, os.ErrDeadlineExceeded) && dataSent > 0 {
-		return nil
-	}
-
-	return err
+	return ioBind(conn, gProxy.host, p.grpcTimeout, initial, dataBuffer, conn)
 }

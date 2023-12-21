@@ -4,10 +4,9 @@
 
 ## features
 
-- proxy
+- proxy (TCP only)
   - [x] http
   - [x] grpc
-  - [ ] websocket
 - tls
 - plugin
   - [x] ip restriction

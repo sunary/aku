@@ -2,21 +2,12 @@ package proxy
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"net"
-	"net/http"
-	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/sunary/aku/config"
 	"go.uber.org/zap"
-)
-
-type (
-	fwHttp = func(req *http.Request, conn *net.TCPConn) error
 )
 
 type HttpProxy struct {
@@ -37,7 +28,7 @@ func (p *Proxy) handleHttp(conn *net.TCPConn, initial io.Reader, reqPath, reqIp 
 		_ = conn.Close()
 	}()
 
-	overridePath := ""
+	var overridePath string
 	for i := range p.sortedHttpPrefix {
 		if strings.HasPrefix(reqPath, p.sortedHttpPrefix[i]) {
 			overridePath = p.sortedHttpPrefix[i]
@@ -50,17 +41,17 @@ func (p *Proxy) handleHttp(conn *net.TCPConn, initial io.Reader, reqPath, reqIp 
 	}
 
 	hProxy := p.httpProxy[overridePath]
-	ll.Info("handle http req", zap.String("overridePath", overridePath))
+	ll.Info("handleHttp req", zap.String("gateway", reqPath), zap.String(hProxy.host, overridePath))
 
 	if !hProxy.AllowIp(reqIp) {
 		return errNotAllow
 	}
 
 	buf := make([]byte, 4*1024)
-	nr, _ := initial.Read(buf)
+	headerSize, _ := initial.Read(buf)
 
 	indexStartPath, indexEndPath := 0, 0
-	for i := 0; i < nr; i++ {
+	for i := 0; i < headerSize; i++ {
 		if buf[i] == '/' && indexStartPath == 0 {
 			indexStartPath = i
 		}
@@ -74,33 +65,7 @@ func (p *Proxy) handleHttp(conn *net.TCPConn, initial io.Reader, reqPath, reqIp 
 	newBuf := bytes.Buffer{}
 	newBuf.Write(buf[:indexStartPath])
 	newBuf.WriteString(newPath)
-	newBuf.Write(buf[indexEndPath:nr])
+	newBuf.Write(buf[indexEndPath:headerSize])
 
-	remoteConn, err := net.Dial("tcp", hProxy.host)
-	if err != nil {
-		return err
-	}
-
-	remoteConn.SetReadDeadline(time.Now().Add(time.Duration(p.grpcTimeout) * time.Second))
-	defer remoteConn.Close()
-
-	wg := sync.WaitGroup{}
-	dataSent := int64(0)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		// Copy any data we receive from the host into the original connection
-		dataSent, _ = io.Copy(conn, remoteConn)
-		conn.CloseWrite()
-	}()
-
-	_, err = io.Copy(remoteConn, io.MultiReader(&newBuf, conn))
-	wg.Wait()
-
-	if errors.Is(err, os.ErrDeadlineExceeded) && dataSent > 0 {
-		return nil
-	}
-
-	return err
+	return ioBind(conn, hProxy.host, p.httpTimeout, &newBuf, conn)
 }

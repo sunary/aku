@@ -1,8 +1,7 @@
 http:
   port: 9000
-  healthcheck: /health
-  ws: /ws
   timeout: 300
+  health_uri: /health
   route_maps:
     - name: open-aku-staff
       host: aku-staff:80
@@ -29,7 +28,6 @@ http:
 
 grpc:
   port: 10000
-  keep_connection: false
   timeout: 300
   method_maps:
     - name: open-grpc-aku-staff
